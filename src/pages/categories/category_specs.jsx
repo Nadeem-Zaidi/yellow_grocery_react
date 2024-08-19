@@ -1,41 +1,38 @@
-import React, { useEffect, useState } from "react"
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome"
-import { faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons"
-import { faTrash, faPlus, faFilter, faSave } from "@fortawesome/free-solid-svg-icons"
-import { useInfiniteQuery } from "@tanstack/react-query"
-import { createSpecs } from "../../api/api"
-import { LastPage } from "@mui/icons-material"
-import Modal from "../../components/modal/loading_modal"
-import AttributeLookup from "../../components/categories/lookups/attribute_lookups"
-import MeasureLookup from "../../lookups/measureunit_lookup"
-
+import React, { useEffect, useState,useCallback} from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faMagnifyingGlass, faTrash, faPlus, faFilter, faSave } from "@fortawesome/free-solid-svg-icons";
+import { debounce } from "../../utilities/debounce";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { createManySpecs, createSpecs, deleteCategorySpecs, fetchCategoriesSpecs, updateCategorySpecs } from "../../api/api";
+import Modal from "../../components/modal/loading_modal";
+import AttributeLookup from "../../components/categories/lookups/attribute_lookups";
+import MeasureLookup from "../../lookups/measureunit_lookup";
 
 const CategorySpec = (props) => {
-
-    const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'asc' })
-    const [filterKeys, setFilterKeys] = useState(null)
-    const [attributeLookup, setAttributeLookup] = useState(false)
-    const [newFields, setNewFields] = useState([])
-    const [existingFields, setExistingFields] = useState([])
-    const [measureLookup, setMeasureLookup] = useState(false)
-    const [selectedRowByLookUp, setSelectedRowByLookUp] = useState(null)
-    const [specs, setSpecs] = useState([])
+    const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'asc' });
+    const [filterKeys, setFilterKeys] = useState({attributename:'',measureunit:''});
+    const [attributeLookup, setAttributeLookup] = useState(false);
+    const [newFields, setNewFields] = useState([]);
+    const [existingFields, setExistingFields] = useState([]);
+    const [measureLookup, setMeasureLookup] = useState(false);
+    const [selectedRowByLookUp, setSelectedRowByLookUp] = useState(null);
+    const [specs, setSpecs] = useState([]);
 
     const { data, isLoading, error, status, refetch, fetchNextPage, isFetchingNextPage, hasNextPage } = useInfiniteQuery({
-        queryKey: ["categoryspecs"],
-        queryFn: ({ pageParam, sortConfig, filterKeys }) => createSpecs({ pageParam, sortKey: sortConfig.key, sortOrder: sortConfig.direction, filterKeys }),
+        queryKey: ["catespecs",sortConfig,filterKeys],
+        queryFn: ({pageParam}) => fetchCategoriesSpecs({ pageParam, sortKey: sortConfig.key, sortOrder: sortConfig.direction, filterKeys, id:props.categoryid}),
         initialPageParam: 1,
         getNextPageParam: (lastPage) => lastPage.meta.hasMore ? lastPage.meta.nextPage : undefined
-
-    })
+    });
 
     useEffect(() => {
         if (status === 'success' && data) {
-            const allSpecs = data.pages.flatMap(page => page.data)
-            setSpecs(allSpecs)
-
+            const allSpecs = data.pages.flatMap(page => page.data);
+            setSpecs(allSpecs);
         }
-    }, [status, data])
+    }, [status, data]);
+
+    console.log(specs,"***")
 
     const addRow = () => {
         const newRow = {
@@ -46,13 +43,12 @@ const CategorySpec = (props) => {
             isNew: true
         };
         setSpecs([...specs, newRow]);
-    }
+    };
 
     const attributeLookupController = (rowitem) => {
-        setSelectedRowByLookUp(rowitem)
-        setAttributeLookup(true)
-
-    }
+        setSelectedRowByLookUp(rowitem);
+        setAttributeLookup(true);
+    };
 
     const selectAttributeFromLookup = (selectedAttribute) => {
         if (specs.some(item => item.attributename === selectedAttribute.attributename)) {
@@ -60,61 +56,130 @@ const CategorySpec = (props) => {
             setShowError(true);
             return;
         }
-        setSpecs(specs.map(item => item.id === selectedRowByLookUp.id ? { ...item, attributename: selectedAttribute.attributename } : item))
-        setAttributeLookup(false)
-    }
+        setSpecs(specs.map(item => item.id === selectedRowByLookUp.id ? { ...item, attributename: selectedAttribute.attributename } : item));
+        const event = { target: { name: 'attributename', value: selectedAttribute.attributename }};
+        onChangeInput(selectedRowByLookUp, event);
+        setAttributeLookup(false);
+    };
 
     const measureLookupController = (rowitem) => {
-        setSelectedRowByLookUp(rowitem)
-        setMeasureLookup(true)
+        setSelectedRowByLookUp(rowitem);
+        setMeasureLookup(true);
+    };
 
-    }
     const selectMeasureLookup = (selectedMeasureRow) => {
         if (specs.some(item => item.measureunit === selectedMeasureRow.unit)) {
-
+            // Handle duplicate measure unit case if needed
         }
-        setSpecs(specs.map(item => item.id === selectedRowByLookUp.id ? { ...item, measureunit: selectedMeasureRow.unit } : item))
-
-        setMeasureLookup(false)
-
-    }
+        setSpecs(specs.map(item => item.id === selectedRowByLookUp.id ? { ...item, measureunit: selectedMeasureRow.unit } : item));
+        const event = { target: { name: 'measureunit', value: selectedMeasureRow.unit }};
+        onChangeInput(selectedRowByLookUp, event);
+        setMeasureLookup(false);
+    };
 
     const onChangeInput = (row, e) => {
-        const { name, value } = e.target
-        if (item.isNew) {
-            setNewFields(prevList => {
-                const existingFields = prevList.find(item => item.id === row.id)
-                const newFields = existingFields ? { ...existingFields, [name]: value } : { id: row.id, [name]: value }
-                return [...prevList.filter(item => item.id !== row.id), newFields]
-            })
-        }
+        const { name, value } = e.target;
+        // console.log("running onchange", row, name, value); // Added logging
 
-        const updatedFields = specs.map(s => s.id === row.id ? { ...s, [name]: value } : s)
-    }
+        // Update specs
+        const updatedSpecs = specs.map(item => item.id === row.id ? { ...item, [name]: value } : item);
+        setSpecs(updatedSpecs);
+
+        // Update newFields or existingFields based on whether the item is new
+        if (row.isNew) {
+            setNewFields(prevList => {
+                const existingItem = prevList.find(item => item.id === row.id);
+                const updatedItem = existingItem ? { ...existingItem, [name]: value } : { id: row.id, [name]: value };
+                return [...prevList.filter(item => item.id !== row.id), updatedItem];
+            });
+        } else {
+            setExistingFields(prevList => {
+                const existingItem = prevList.find(item => item.id === row.id);
+                const updatedItem = existingItem ? { ...existingItem, [name]: value } : { id: row.id, [name]: value };
+                return [...prevList.filter(item => item.id !== row.id), updatedItem];
+            });
+        }
+    };
 
     const deleteRow = async (row) => {
         if (row.isNew) {
-            setSpecs(specs.filter(item => item.id !== row.id))
+            setSpecs(specs.filter(item => item.id !== row.id));
         } else {
             try {
-                await deleteCategorySpecs(row.id)
-                setSpecs(specs.filter(item => item.id !== row.id))
-
+                await deleteCategorySpecs(row.id);
+                setSpecs(specs.filter(item => item.id !== row.id));
             } catch (error) {
-                console.log(error)
-
+                console.log(error);
             }
         }
-
-    }
-
-    const formHandler = (e) => {
-        e.preventDefault()
-        console.log(specs)
+    };
 
 
+    const handleSort = (key) => {
+        const direction = sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc';
+        setSortConfig({ key, direction });
+        refetch();
+    };
 
-    }
+    const debouncedFilter = useCallback(
+        debounce((filterObj) => {
+            setFilterKeys(filterObj);
+            refetch();
+        }, 400),
+        []
+    );
+
+    const handleFilter = (e) => {
+        const { id, value } = e.target;
+        console.log(id, value)
+        setFilterKeys((prev) => {
+            const newFilterKeys = { ...prev, [id]: value };
+            debouncedFilter(newFilterKeys);
+            return newFilterKeys;
+        });
+    };
+
+
+  
+    const formHandler = async(e) => {
+        e.preventDefault();
+        try{
+            if(newFields.length >0){
+               
+                for(let i of newFields){
+                    let catdata={
+                        categoryid:props.categoryid,
+                        attributename:i.attributename,
+                        measureunit:i.measureunit
+                    }
+                    
+                    const result=await createSpecs(catdata)
+                    console.log(result) 
+                }     
+            }
+
+            if(existingFields.length >0){
+                for(let i of existingFields){
+                    console.log(i)
+                    let catData={
+                        attributename:i.attributename,
+                        measureunit:i.measureunit
+                        
+                    }
+                    console.log(data)
+                    const result=await updateCategorySpecs(i.id,catData)
+                    console.log(result)
+                }
+            }
+
+        }catch(error){
+            console.log(error)
+
+        }
+    };
+
+
+
     return (
         <div>
             {attributeLookup && <Modal>
@@ -125,17 +190,12 @@ const CategorySpec = (props) => {
                         </button>
                     </div>
                     <AttributeLookup selectedItem={selectAttributeFromLookup} />
-
                 </div>
-
             </Modal>}
 
-            {
-                measureLookup && <Modal>
-                    <MeasureLookup selectItem={selectMeasureLookup} />
-
-                </Modal>
-            }
+            {measureLookup && <Modal>
+                <MeasureLookup selectItem={selectMeasureLookup} />
+            </Modal>}
             <form onSubmit={formHandler}>
                 <div className="flex justify-end mt-2 mb-2">
                     <button type="button" className="bg-primary hover:bg-primary-light text-white rounded-full w-8 h-8 flex items-center justify-center" onClick={addRow}>
@@ -158,7 +218,7 @@ const CategorySpec = (props) => {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {specs.map((item, index) => (
+                            {specs?.map((item, index) => (
                                 <tr key={item.id}>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="flex flex-row items-center">
@@ -166,25 +226,22 @@ const CategorySpec = (props) => {
                                                 name="attributename"
                                                 value={item.attributename}
                                                 type="text"
-                                                onChange={(e) => props.onChange(item, e)}
+                                                onChange={(e) => onChangeInput(item, e)}
                                                 placeholder="Type Attribute Name"
                                                 className="w-full px-2 py-1 border rounded"
                                             />
                                             <button type="button" onClick={() => attributeLookupController(item)}>
                                                 <FontAwesomeIcon icon={faMagnifyingGlass} />
                                             </button>
-
-
                                         </div>
-
                                     </td>
                                     <div className="flex flex-row">
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <input
-                                                name="measureunitid"
+                                                name="measureunit"
                                                 value={item.measureunit}
                                                 type="text"
-                                                onChange={(e) => onChange(item, e)}
+                                                onChange={(e) => onChangeInput(item, e)}
                                                 placeholder="Type Data Type"
                                                 className="w-full px-2 py-1 border rounded"
                                             />
@@ -193,7 +250,6 @@ const CategorySpec = (props) => {
                                             </button>
                                         </td>
                                     </div>
-
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <button
                                             type="button"
@@ -209,9 +265,7 @@ const CategorySpec = (props) => {
                 </div>
             </form>
         </div>
+    );
+};
 
-
-    )
-}
-
-export default CategorySpec
+export default CategorySpec;

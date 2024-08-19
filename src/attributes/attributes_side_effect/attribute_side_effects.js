@@ -2,7 +2,7 @@
 
 export const fetchAllAttributes = async () => {
     try {
-        const response = await fetch("http://localhost:3001/grocery/attribute")
+        const response = await fetch("http://192.168.1.9:3001/grocery/attribute")
         if (!response.ok) {
             throw new Error('Failed to fetch attrubutes')
         }
@@ -18,7 +18,7 @@ export const fetchAllAttributes = async () => {
 
 export const addAttributes = async (data) => {
     try {
-        const response = await fetch("http://localhost:3001/grocery/attribute/createAttribute", {
+        const response = await fetch("http://192.168.1.9:3001/grocery/attribute/createAttribute", {
             method: "POST",
             headers: {
                 'Content-Type': 'application/json'
@@ -39,7 +39,7 @@ export const addAttributes = async (data) => {
 
 export const updateAttribute = async (data) => {
     try {
-        const response = await fetch("http://localhost:3001/grocery/attribute/updateAttribute", {
+        const response = await fetch("http://192.168.1.9:3001/grocery/attribute/updateAttribute", {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
@@ -61,7 +61,7 @@ export const updateAttribute = async (data) => {
 
 export const deleteRow = async (id) => {
     try {
-        const response = await fetch(`http://localhost:3001/grocery/attribute/delete/${id}`, {
+        const response = await fetch(`http://192.168.1.9:3001/grocery/attribute/delete/${id}`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
